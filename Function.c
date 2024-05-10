@@ -3,7 +3,7 @@
 
 
 //打开文件，分配缓冲区，返回文件缓冲区指针
-LPVOID _OpenFile(IN const char* str,OUT size_t *FileSize) {
+LPVOID _OpenFile(IN const LPSTR str,OUT size_t *FileSize) {
 	FILE* pf = fopen(str, "rb");
 	if (!pf) {
 		perror("打开文件失败");
@@ -125,7 +125,7 @@ size_t _FindCodeSection(IN struct FileSign* pFileSign,IN struct SectionTable* pS
 
 
 //不可复用,将shellcode写入代码段结尾
-void _WriteShellCode(OUT LPVOID vFileBuffer,IN struct FileSign* pFileSign,IN struct SectionTable* pSectionTable,IN char* shellcode , IN LPSTR SizeOfCode) {
+void _WriteShellCodeToIdleArea(OUT LPVOID vFileBuffer,IN struct FileSign* pFileSign,IN struct SectionTable* pSectionTable,IN char* shellcode , IN LPSTR SizeOfCode) {
 	//判断代码节
 	size_t n = _FindCodeSection(pFileSign, pSectionTable);
 	pSectionTable += n;
@@ -160,6 +160,46 @@ void _WriteShellCode(OUT LPVOID vFileBuffer,IN struct FileSign* pFileSign,IN str
 }
 
 
+//写入新的节，需传入ImageBuffer，Header头，节表数据，新节的名字
+void _AddNewSection(OUT LPVOID vFileBuffer, IN struct FileSign* pFileSign, IN struct SectionTable* pSectionTable, IN LPSTR SectionName,IN size_t SizeOfSection) {
+	//单个节表占40字节
+	//判断空间是否够80字节来分配新的节表
+	LPVOID pNewSectionTable = (DWORD)vFileBuffer + (*(DWORD*)((DWORD)vFileBuffer + 0x3C)) + 0x18 + pFileSign->SizeOfOptionHeader + (pFileSign->NumberOfSection * 40);
+	if (((pFileSign->SizeOfHeaders + (DWORD)vFileBuffer) - (DWORD)pNewSectionTable) < 80) {
+		printf("没有足够的空间分配新的节表\n");
+		return;
+	}
+
+	//NumberOfSection + 1
+	LPSTR pvNumberOfSection = (WORD*)((DWORD)vFileBuffer + *(DWORD*)((DWORD)vFileBuffer + 0x3C) + 0x6);
+	*(WORD*)pvNumberOfSection += 1;
+
+	//修改SizeOfImage,加新增字节大小
+	LPSTR pvSizeOfImage = (DWORD*)((DWORD)pvNumberOfSection + 0x12 + 0x38);
+	*(DWORD*)pvSizeOfImage += SizeOfSection;
+
+	//复制节表
+	LPVOID pvBeginSectionTable = (DWORD)pvNumberOfSection + 0x12 + pFileSign->SizeOfOptionHeader;
+	LPVOID pvCodeSection = (DWORD)pvBeginSectionTable + (_FindCodeSection(pFileSign, pSectionTable) * 40);
+	LPVOID pvNewSection = (DWORD)pvBeginSectionTable + (pFileSign->NumberOfSection * 40);
+	memcpy(pvNewSection, pvCodeSection, 40);
+
+
+	//定位节表为新节上一个节
+	pSectionTable += pFileSign->NumberOfSection - 1;
+
+
+	//修改节表字段
+	memset(pvNewSection, 0, 8);
+	memcpy(pNewSectionTable, SectionName, 8);
+
+	*(DWORD*)((DWORD)pvNewSection + 0x8) = SizeOfSection;
+	*(DWORD*)((DWORD)pvNewSection + 0x0c) = pSectionTable->VirtualAddress + pSectionTable->SizeOfRawData;
+	*(DWORD*)((DWORD)pvNewSection + 0x10) = SizeOfSection;
+	*(DWORD*)((DWORD)pvNewSection + 0x14) = pSectionTable->PointToRawData + pSectionTable->SizeOfRawData;
+
+}
+
 
 
 //******************************************************************************************************************
@@ -167,15 +207,16 @@ void _WriteShellCode(OUT LPVOID vFileBuffer,IN struct FileSign* pFileSign,IN str
 
 //释放ImageBuffer
 //将ImageBuffer还原为FileBuffer
-LPVOID _NewBuffer(IN LPVOID vFileBuffer, IN struct SectionTable* pSectionTable, IN struct FileSign* pFileSign, size_t SizeOfCode, OUT size_t FileSize) {
+LPVOID _NewBuffer(IN LPVOID vFileBuffer, IN struct SectionTable* pSectionTable, IN struct FileSign* pFileSign, size_t SizeOfCode, OUT size_t* FileSize,IN size_t SizeOfNewSection) {
 	//分配内存
-	LPVOID NewBuffer = (char*)malloc(FileSize);
+	*FileSize += SizeOfNewSection;
+	LPVOID NewBuffer = malloc(*FileSize);
 	if (!NewBuffer) {
 		printf("分配内存失败\n");
 		free(NewBuffer);
 		return NULL;
 	}
-	memset(NewBuffer, 0, FileSize);
+	memset(NewBuffer, 0, *FileSize);
 	//copyPE头
 	memcpy(NewBuffer, vFileBuffer, pFileSign->SizeOfHeaders);
 
@@ -193,14 +234,14 @@ LPVOID _NewBuffer(IN LPVOID vFileBuffer, IN struct SectionTable* pSectionTable, 
 
 
 //将NewBuffer存盘
-void _SaveFile(IN LPVOID NewBuffer, IN size_t FileSize,IN LPSTR New_FilePATH) {
+void _SaveFile(IN LPVOID NewBuffer, IN size_t* FileSize, IN LPSTR New_FilePATH) {
 	FILE* pf = fopen(New_FilePATH, "wb");
 	if (!pf) {
 		perror("创建文件失败");
 		fclose(pf);
 		return;
 	}
-	if (!fwrite(NewBuffer, FileSize, 1, pf)) {
+	if (!fwrite(NewBuffer, *FileSize, 1, pf)) {
 		perror("写入失败");
 		fclose(pf);
 		return;

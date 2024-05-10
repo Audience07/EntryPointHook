@@ -8,7 +8,7 @@
 
 
 //打开文件，分配缓冲区，返回文件缓冲区指针
-LPVOID _OpenFile(IN const char* str, OUT size_t* FileSize);
+LPVOID _OpenFile(IN const LPSTR str, OUT size_t* FileSize);
 //读取文件标识，存储到FileSign结构中，返回节表数量
 size_t _ReadData(IN LPVOID FileBuffer, OUT struct FileSign* FileSign);
 //读取节表关键字段
@@ -21,17 +21,17 @@ LPVOID _vFileBuffer(IN LPVOID FileBuffer, IN struct FileSign* pFileSign, IN stru
 // 
 //返回代码节数
 size_t _FindCodeSection(IN struct FileSign* pFileSign, IN struct SectionTable* pSectionTable);
-//写入shellcode
-void _WriteShellCode(OUT LPVOID vFileBuffer, IN struct FileSign* pFileSign, IN struct SectionTable* pSectionTable, IN char* shellcode, IN LPSTR SizeOfCode);
 //将改写好的ImageBuffer重写为FileBuffer,返回NewBuffer的指针&&NewBuffer的大小
-LPVOID _NewBuffer(IN LPVOID vFileBuffer, IN struct SectionTable* pSectionTable, IN struct FileSign* pFileSign, size_t SizeOfCode, OUT size_t FileSize);
+LPVOID _NewBuffer(IN LPVOID vFileBuffer, IN struct SectionTable* pSectionTable, IN struct FileSign* pFileSign, size_t SizeOfCode, OUT size_t* FileSize, IN size_t SizeOfNewSection);
 //将NewBuffer存盘
-void _SaveFile(IN LPVOID NewBuffer, IN size_t FileSize, IN LPSTR New_FilePATH);
+void _SaveFile(IN LPVOID NewBuffer, IN size_t* FileSize, IN LPSTR New_FilePATH);
+//写入新的节
+void _AddNewSection(OUT LPVOID vFileBuffer, IN struct FileSign* pFileSign, IN struct SectionTable* pSectionTable, IN LPSTR SectionName, IN size_t SizeOfSection);
 
 
 
 //不可复用,将shellcode写入代码段结尾
-void _WriteShellCode(OUT LPVOID vFileBuffer, IN struct FileSign* pFileSign, IN struct SectionTable* pSectionTable, IN char* shellcode, IN LPSTR SizeOfCode);
+void _WriteShellCodeToIdleArea(OUT LPVOID vFileBuffer, IN struct FileSign* pFileSign, IN struct SectionTable* pSectionTable, IN char* shellcode, IN LPSTR SizeOfCode);
 
 
 
