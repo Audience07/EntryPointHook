@@ -2,6 +2,7 @@
 #define FilePATH "E:/C32Asm.exe"
 #define New_FilePATH "E:/C32Asm_Protected.exe"
 #define SizeOfCode 18
+#define SizeOfNewSection 0x1000
 
 //压四个零进栈，当作MessageBoxA的参数，Call跳转MessageBoxA执行函数，执行完后Jmp跳转到代码开始位置
 char shellcode[] = { 0x6A,0x02,0x6A,0x00,0x6A,0x00,0x6A,0x00,0xE8,0x00,0x00,0x00,0x00,0xE9,0x00,0x00,0x00,0x00 };
@@ -17,7 +18,7 @@ int main() {
 	//设置区域,编码格式
 	setlocale(LC_ALL, "chs");
 	//打开文件,获取FileBuffer
-	size_t* FileBuffer = _OpenFile(FilePATH, FileSize);
+	size_t* FileBuffer = _OpenFile(FilePATH, FileSize,SizeOfNewSection);
 	if (!FileBuffer) {
 		return 0;
 	}
@@ -34,13 +35,21 @@ int main() {
 
 
 	//读取节表关键字段
-	struct SectionTable* pSectionTable = malloc(sizeof(struct SectionTable)*pFileSign->NumberOfSection);
+	struct SectionTable* pSectionTable = malloc(sizeof(struct SectionTable) * (pFileSign->NumberOfSection + 1));
 	if (!pSectionTable) {
 		printf("分配节表内存失败\n");
 		system("pause");
 		return 0;
 	}
 	_ReadSectionTable(pSectionTable,pFileSign);
+
+	//为FileBuffer分配新节表
+	_AddNewSection(FileBuffer, pFileSign, pSectionTable, ".New", SizeOfNewSection);
+
+
+	//重新读取分配节表后的字段
+	_ReadData(FileBuffer, pFileSign);
+	_ReadSectionTable(pSectionTable, pFileSign);
 
 
 	//分配可执行的内存，并将数据以内存对齐填入
@@ -50,18 +59,20 @@ int main() {
 		system("pause");
 		return 0;
 	}
-	
-	//将ShellCode写入ImageBuffer
-	_WriteShellCodeToIdleArea(vFileBuffer, pFileSign, pSectionTable, shellcode, SizeOfCode);
 
-	//以代码节为原型添加一个新的节（可读可写可执行）
-	size_t SizeOfNewSection = 0x1000;
-	//_AddNewSection(vFileBuffer, pFileSign, pSectionTable, ".New", SizeOfNewSection);
+	//将Shellcode写入新分配的节中
+	_WriteShellCodeToNewSection(vFileBuffer, pSectionTable, pFileSign, shellcode, SizeOfCode);
+	
+
+
+	
+
+	
 
 
 
 	//将ImageBuffer转换成FileBuffer,为存盘做准备
-	LPVOID NewBuffer = _NewBuffer(vFileBuffer, pSectionTable, pFileSign, SizeOfCode, FileSize, SizeOfNewSection);
+	LPVOID NewBuffer = _NewBuffer(vFileBuffer, pSectionTable, pFileSign, SizeOfCode, FileSize);
 
 
 
@@ -70,7 +81,7 @@ int main() {
 	vFileBuffer = NULL;
 	
 	//存盘
-	_SaveFile(NewBuffer, FileSize, New_FilePATH, 0);
+	_SaveFile(NewBuffer, FileSize, New_FilePATH);
 
 
 
